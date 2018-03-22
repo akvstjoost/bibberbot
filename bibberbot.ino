@@ -52,8 +52,14 @@ void loop() {
 }
 
 void setInterval(float s) {
-  if (s > 0) digitalWrite(leftDirPin, LOW);
-  if (s < 0) digitalWrite(leftDirPin, HIGH);
+  if (s > 0) {
+    digitalWrite(leftDirPin, LOW);
+    digitalWrite(rightDirPin, HIGH);
+      }
+  if (s < 0) { 
+    digitalWrite(leftDirPin, HIGH);
+    digitalWrite(rightDirPin, LOW);
+  }
   s = abs(min(s,100));
   if (s <= speedDeadzone) stepperOn = false;
   else {
