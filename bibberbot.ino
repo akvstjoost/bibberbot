@@ -6,7 +6,7 @@ LSM6 imu;
 unsigned long stepperStamp;
 unsigned long rightStamp;
 unsigned long gyroStamp;
-unsigned long stepperInterval = 5000; //means off
+unsigned long stepperInterval = 5000;
 boolean stepperOn = false;
 int leftStepPin = 2;
 int leftDirPin = 3;
