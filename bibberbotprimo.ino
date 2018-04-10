@@ -1,6 +1,3 @@
-#include <Wire.h>
-#include "I2Cdev.h"
-#include "MPU6050.h"
 #include <WiFiLink.h>
 #include <PubSubClient.h>
 #include "secret.h"
@@ -24,7 +21,6 @@ unsigned long minInterval  = 1500;
 unsigned long maxInterval  = 500000;
 
 //gyroscope
-MPU6050 accelgyro;
 unsigned long gyroStamp;
 unsigned long gyroInterval = 5000;
 float previousAngle = 0;
@@ -57,9 +53,7 @@ void setup() {
   pinMode(stepperDirPin[RIGHTSTEPPER], OUTPUT);
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
-  Wire.begin();
-  accelgyro.initialize();
-  Serial.println(accelgyro.testConnection() ? "MPU6050 connection successful" : "MPU6050 connection failed");
+  setupMPU6050();
   if (USE_WIFI) {
     setup_wifi();
     client.setServer(mqtt_server, 1883);
@@ -97,7 +91,7 @@ void balanceloop() {
     float targetAngle = balanceAngle + (controllerSpeed / 10);
     int16_t ax, ay, az, gx, gy, gz;
     unsigned long loopTime = (currentMicros - gyroStamp) / 1000;
-    accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+    getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
     float accAngle =  atan2(az, ax) * RAD_TO_DEG;
     int gyroRate = map(gy - 10, -32768, 32768, -250, 250);
     float gyroAngle = (float)gyroRate * loopTime / 1000;
