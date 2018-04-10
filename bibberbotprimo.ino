@@ -8,7 +8,7 @@
 
 //stepper
 unsigned long stepperStamp[] = {0, 0};
-unsigned long stepperInterval[] = {5000, 5000};
+unsigned long stepperInterval[] = {5000, 5000}; //uS
 boolean stepperOn[] = {false, false};
 int stepperStepPin[] = {2, 4};
 int stepperDirPin[] = {3, 5};
@@ -21,8 +21,8 @@ unsigned long minInterval  = 1500;
 unsigned long maxInterval  = 500000;
 
 //gyroscope
-unsigned long gyroStamp;
-unsigned long gyroInterval = 5000;
+unsigned long gyroStamp = 0;
+unsigned long gyroInterval = 5000; //uS
 float previousAngle = 0;
 float filterCoeff = 0.99;
 //control loop
@@ -42,8 +42,11 @@ int controllerSteer = 0;
 const char* mqtt_server = "broker.mqtt-dashboard.com";
 WiFiClient espClient;
 PubSubClient client(espClient);
-long lastMsg = 0;
-long lastReconnectAttempt = 0;
+unsigned long mqttStamp = 0;
+unsigned long mqttInterval = 100000; //uS
+unsigned long lastMsg = 0;
+unsigned long lastReconnectAttempt = 0;
+
 
 void setup() {
   Serial.begin(9600);
@@ -62,8 +65,8 @@ void setup() {
 }
 
 void loop() {
-  balanceloop();
-  if (USE_WIFI) mqttloop();
+  microsloop();
+  Serial.println(controllerSteer);
 }
 
 void setInterval(float s, int stepper) { // stepper: 0 for left stepper, 1 for right stepper
@@ -77,8 +80,14 @@ void setInterval(float s, int stepper) { // stepper: 0 for left stepper, 1 for r
   }
 }
 
-void balanceloop() {
+void microsloop() {
   unsigned long currentMicros = micros();
+  if (currentMicros < gyroStamp) { //fix overflow
+    gyroStamp = 0;
+    stepperStamp[0] = 0;
+    stepperStamp[1] = 0;
+    mqttStamp = 0;
+  }
   for (int i = LEFTSTEPPER; i <= RIGHTSTEPPER; i++) {
     if (stepperOn[i] and currentMicros > stepperStamp[i] + stepperInterval[i]) {
       digitalWrite(stepperStepPin[i], HIGH);
@@ -105,6 +114,23 @@ void balanceloop() {
     previousAngle = currentAngle;
     gyroStamp = currentMicros;
   }
+  if (USE_WIFI && (currentMicros > mqttStamp + mqttInterval)) {
+    if (!client.connected()) {
+      if (currentMicros > lastReconnectAttempt + 5000000) {
+        digitalWrite(LED_BUILTIN, LOW);
+        lastReconnectAttempt = currentMicros;
+        // Attempt to reconnect
+        if (reconnect()) {
+          lastReconnectAttempt = 0;
+        }
+      }
+    } else {
+
+      client.loop();
+      //client.publish("outTopic", "hello world");
+      mqttStamp = currentMicros;
+    }
+  }
 }
 
 void setup_wifi() {
@@ -124,7 +150,7 @@ void setup_wifi() {
   Serial.println(WiFi.localIP());
 }
 
-void callback(char* topic, byte* payload, unsigned int length) {
+void callback(char* topic, byte * payload, unsigned int length) { //takes about 10 ms
   char val[length + 1];
   for (int i = 0; i < length; i++) {
     val[i] = (char)payload[i];
@@ -145,27 +171,4 @@ boolean reconnect() {
   return client.connected();
 }
 
-void mqttloop() {
-  long now = millis();
-  if (!client.connected()) {
-    if (now - lastReconnectAttempt > 5000) {
-      digitalWrite(LED_BUILTIN, LOW);
-      lastReconnectAttempt = now;
-      // Attempt to reconnect
-      if (reconnect()) {
-        lastReconnectAttempt = 0;
-      }
-    }
-  } else {
 
-    client.loop();
-    /*
-      if (now - lastMsg > 2000) {
-      lastMsg = now;
-
-      client.publish("outTopic", "hello world");
-      }
-    */
-  }
-
-}
