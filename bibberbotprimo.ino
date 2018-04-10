@@ -66,7 +66,7 @@ void setup() {
 
 void loop() {
   microsloop();
-  Serial.println(controllerSteer);
+  //Serial.println(controllerSteer);
 }
 
 void setInterval(float s, int stepper) { // stepper: 0 for left stepper, 1 for right stepper
