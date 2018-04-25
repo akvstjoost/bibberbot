@@ -4250,7 +4250,7 @@
 										"followglobaltempo" : 0,
 										"formantcorrection" : 0,
 										"mode" : "basic",
-										"originallength" : [ 15828.480469, "ticks" ],
+										"originallength" : [ 1612.800049, "ticks" ],
 										"originaltempo" : 120.0,
 										"pitchcorrection" : 0,
 										"quality" : "basic",
@@ -4710,7 +4710,7 @@
 									"outlettype" : [ "" ],
 									"patching_rect" : [ 410.0, 461.0, 50.0, 22.0 ],
 									"style" : "",
-									"text" : "2"
+									"text" : "3"
 								}
 
 							}
@@ -4923,7 +4923,7 @@
 													"outlettype" : [ "" ],
 													"patching_rect" : [ 424.0, 395.0, 50.0, 22.0 ],
 													"style" : "",
-													"text" : "2"
+													"text" : "3"
 												}
 
 											}
