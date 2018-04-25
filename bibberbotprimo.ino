@@ -1,13 +1,16 @@
-#include <WiFiLink.h>
 #include <PubSubClient.h>
+#include <WiFiLink.h>
 #include "secret.h"
 #include <stdlib.h>
 
 #define LEFTSTEPPER 0
 #define RIGHTSTEPPER 1
+
 #define USE_WIFI 0
 #define USE_STEPPERS 1
+
 #define PRINT_GYRO 0
+#define PRINT_BATTERY 1
 
 //stepper
 unsigned long stepperStamp[] = {0, 0};
@@ -40,6 +43,11 @@ float Kd = 0.1;
 //controller
 int controllerSpeed = 0;
 int controllerSteer = 0;
+
+//battery
+unsigned long batteryStamp = 0;
+unsigned long batteryInterval = 1000000;
+float batteryVoltage = 99;
 
 //mqtt
 const char* mqtt_server = "broker.mqtt-dashboard.com";
@@ -152,6 +160,14 @@ void microsloop() {
       //client.publish("bibberBot/out", "hello world");
       mqttStamp = currentMicros;
     }
+  }
+  if (currentMicros > batteryStamp + batteryInterval) {
+    batteryVoltage = analogRead(A0) * 4.0 / 1024.0;
+    if (PRINT_BATTERY) {
+      Serial.print("Battery V:");
+      Serial.print(batteryVoltage);
+    }
+    batteryStamp = currentMicros;
   }
   
 }
