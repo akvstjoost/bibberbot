@@ -5,39 +5,41 @@
 
 #define LEFTSTEPPER 0
 #define RIGHTSTEPPER 1
-
-#define USE_WIFI 0
++
+#define USE_WIFI 1
 #define USE_STEPPERS 1
 
 #define PRINT_GYRO 0
-#define PRINT_BATTERY 1
+#define PRINT_BATTERY 0
 
 //stepper
 unsigned long stepperStamp[] = {0, 0};
 unsigned long stepperInterval[] = {10000, 10000}; //uS
-boolean stepperOn[] = {false,false};
-int stepperStepPin[] = {10, 12};
-int stepperDirPin[] = {11, 13};
-int stepperMicroPin[] = {7, 5, 6};
-byte stepDivider = B001; //quarters
+boolean stepperOn[] = {false, false};
+int stepperStepPin[] = {A5, A3};
+int stepperDirPin[] = {A4, A2};
+int stepperMicroPin[] = {7, 6, 5};
+byte stepDivider = B010; //2s
 
 //speed->interval conversion
 float speedDeadzone = 0; //motor only starts working at this speed
-unsigned long intervalAt100 = 2400;
-unsigned long minInterval  = 3000;
+unsigned long intervalAt100 = 1200;
+unsigned long minInterval  = 1400;
 unsigned long maxInterval  = 500000;
+float quadraticness = 0;
 
 //gyroscope
 unsigned long gyroStamp = 0;
 unsigned long gyroInterval = 5000; //uS
 float previousAngle = 0;
-float filterCoeff = 0.99;
+float filterCoeff = 0.995;
 //control loop
-float balanceAngle = 0;
+float balanceAngle = -1;
 float errorSum = 0;
-float Kp = 2;
-float Ki = 0.5;
-float Kd = 0.1;
+float Kp = 5;
+float Ki = 0.4;
+float Kd = 0.05;
+int maxError = 100;
 //4 0.4 0.1
 
 //controller
@@ -66,19 +68,19 @@ void setup() {
   pinMode(stepperDirPin[RIGHTSTEPPER], OUTPUT);
   pinMode(stepperMicroPin[0], OUTPUT);
   pinMode(stepperMicroPin[1], OUTPUT);
-  pinMode(stepperMicroPin[2], OUTPUT);   
+  pinMode(stepperMicroPin[2], OUTPUT);
   digitalWrite(stepperMicroPin[0], (stepDivider & 0x4));
   digitalWrite(stepperMicroPin[1], (stepDivider & 0x2));
   digitalWrite(stepperMicroPin[2], (stepDivider & 0x1));
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
   setupMPU6050();
-
   if (USE_WIFI) {
     setup_wifi();
     client.setServer(mqtt_server, 1883);
     client.setCallback(callback);
   }
+  delay(1000);
 
 }
 
@@ -88,7 +90,7 @@ void loop() {
 
 void setInterval(float s, int stepper) { // stepper: 0 for left stepper, 1 for right stepper
   digitalWrite(stepperDirPin[stepper], (s < 0) ? stepper : !stepper); //speed polarity determines direction, but both sides have inverse directions;
-  s = abs(min(s, 100));
+  s = abs(min(s * (1 + (s * quadraticness)), 100)); //quadraticness
   if (s <= speedDeadzone) stepperOn[stepper] = false;
   else {
     stepperOn[stepper] = true;
@@ -116,7 +118,7 @@ void microsloop() {
         stepperStamp[i] = max(stepperStamp[i] + stepperInterval[i], currentMicros);
       }
     }
-   
+
   }
   if (currentMicros > gyroStamp + gyroInterval) {
     float targetAngle = balanceAngle + (controllerSpeed / 10);
@@ -129,19 +131,27 @@ void microsloop() {
     float currentAngle = filterCoeff * (previousAngle + gyroAngle) + ( (1 - filterCoeff) * accAngle);
     float error = currentAngle - targetAngle;
     errorSum = errorSum + error;
-    errorSum = constrain(errorSum, -300, 300);
-    float motorPower = Kp * (error) + Ki * (errorSum) * loopTime - Kd * (currentAngle - previousAngle) / loopTime;
+    errorSum = constrain(errorSum, -maxError, maxError);
+    float motorPower = (Kp * (error)) + (Ki * (errorSum) * loopTime) - ( Kd * (currentAngle - previousAngle) / loopTime);
+
     setInterval(motorPower + controllerSteer, LEFTSTEPPER);
     setInterval(motorPower - controllerSteer, RIGHTSTEPPER);
     previousAngle = currentAngle;
     gyroStamp = currentMicros;
-    if (PRINT_GYRO) { 
+    if (PRINT_GYRO) {
       Serial.print(accAngle);
       Serial.print("\t");
       Serial.print(gyroAngle);
       Serial.print("\t");
-      Serial.println(currentAngle);
-      delay(100);
+      Serial.print(currentAngle);
+      Serial.print("\t");
+      Serial.print(stepperInterval[0]);
+      Serial.print("\t");
+      Serial.print(stepperInterval[1]);
+      Serial.print("\t");
+      Serial.print(controllerSteer);
+      Serial.print("\t");
+      Serial.println(controllerSpeed);
     }
   }
   if (USE_WIFI && (currentMicros > mqttStamp + mqttInterval)) {
@@ -157,19 +167,18 @@ void microsloop() {
     } else {
 
       client.loop();
-      //client.publish("bibberBot/out", "hello world");
       mqttStamp = currentMicros;
     }
   }
   if (currentMicros > batteryStamp + batteryInterval) {
-    batteryVoltage = analogRead(A0) * 4.0 / 1024.0;
+    batteryVoltage = analogRead(A0) * 3.3 / 1024.0;
     if (PRINT_BATTERY) {
       Serial.print("Battery V:");
       Serial.print(batteryVoltage);
     }
     batteryStamp = currentMicros;
   }
-  
+
 }
 
 void setup_wifi() {
@@ -197,12 +206,14 @@ void callback(char* topic, byte * payload, unsigned int length) { //takes about 
   }
   val[length + 1] = '\0';
   if (!strcmp(topic, "bibberBot/speed")) controllerSpeed = atoi(val);
-  if (!strcmp(topic, "bibberBot/steer")) controllerSteer = atoi(val);
-  if (!strcmp(topic, "bibberBot/kp")) Kp = atof(val);
-  if (!strcmp(topic, "bibberBot/ki")) Ki = atof(val);
-  if (!strcmp(topic, "bibberBot/kd")) Kd = atof(val);
-  unsigned long d = millis() - m;
-  Serial.println(d);
+  else if (!strcmp(topic, "bibberBot/steer")) controllerSteer = atoi(val);
+  else if (!strcmp(topic, "bibberBot/kp")) Kp = atof(val);
+  else if (!strcmp(topic, "bibberBot/ki")) Ki = atof(val);
+  else if (!strcmp(topic, "bibberBot/kd")) Kd = atof(val);
+  else if (!strcmp(topic, "bibberBot/balance")) balanceAngle = atof(val);
+  else if (!strcmp(topic, "bibberBot/deadzone")) speedDeadzone = atof(val);
+  else if (!strcmp(topic, "bibberBot/quadraticness")) quadraticness = atof(val);
+  else if (!strcmp(topic, "bibberBot/maxerror")) quadraticness = atoi(val);
 
 }
 
@@ -216,6 +227,10 @@ boolean reconnect() {
     client.subscribe("bibberBot/kp");
     client.subscribe("bibberBot/ki");
     client.subscribe("bibberBot/kd");
+    client.subscribe("bibberBot/balance");
+    client.subscribe("bibberBot/deadzone");
+    client.subscribe("bibberBot/quadraticness");
+    client.subscribe("bibberBot/maxerror");
   }
   return client.connected();
 
