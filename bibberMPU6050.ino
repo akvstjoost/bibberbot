@@ -4,12 +4,11 @@ SoftwareI2C Wire;
 const int MPU_addr=0x68;  // I2C address of the MPU-6050
 
 void setupMPU6050(){
-  Wire.begin(2,3);
+  Wire.begin(4,3);
   Wire.beginTransmission(MPU_addr);
   Wire.write(0x6B);  // PWR_MGMT_1 register
   Wire.write(0);     // set to zero (wakes up the MPU-6050)
   Wire.endTransmission();
-  Serial.begin(9600);
 }
 
 void getMotion6(int16_t* AcX, int16_t* AcY, int16_t* AcZ, int16_t* GyX, int16_t* GyY, int16_t* GyZ) {
