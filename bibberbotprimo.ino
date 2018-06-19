@@ -1,16 +1,19 @@
 #include <PubSubClient.h>
 #include <WiFiLink.h>
-#include "secret.h"
+//#include "secret.h"
 #include <stdlib.h>
 
 #define LEFTSTEPPER 0
 #define RIGHTSTEPPER 1
-+
+
 #define USE_WIFI 1
 #define USE_STEPPERS 1
 
 #define PRINT_GYRO 0
 #define PRINT_BATTERY 0
+
+#define DATALED 38
+#define BALANCEBUTTON 44
 
 //stepper
 unsigned long stepperStamp[] = {0, 0};
@@ -36,15 +39,17 @@ float filterCoeff = 0.995;
 //control loop
 float balanceAngle = -1;
 float errorSum = 0;
-float Kp = 5;
-float Ki = 0.4;
-float Kd = 0.05;
+float Kp = 10;
+float Ki = 0.5;
+float Kd = 0.0;
 int maxError = 100;
 //4 0.4 0.1
 
 //controller
-int controllerSpeed = 0;
-int controllerSteer = 0;
+float controllerSpeed = 0;
+float controllerSteer = 0;
+float filteredSpeed = 0;
+float filteredSteer = 0;
 
 //battery
 unsigned long batteryStamp = 0;
@@ -58,6 +63,7 @@ PubSubClient client(espClient);
 unsigned long mqttStamp = 0;
 unsigned long mqttInterval = 100000; //uS
 unsigned long lastReconnectAttempt = 0;
+boolean dataledStatus = false;
 
 
 void setup() {
@@ -74,6 +80,9 @@ void setup() {
   digitalWrite(stepperMicroPin[2], (stepDivider & 0x1));
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
+  pinMode(DATALED, OUTPUT);
+  digitalWrite(DATALED, LOW);
+  pinMode(BALANCEBUTTON, INPUT);
   setupMPU6050();
   if (USE_WIFI) {
     setup_wifi();
@@ -121,7 +130,9 @@ void microsloop() {
 
   }
   if (currentMicros > gyroStamp + gyroInterval) {
-    float targetAngle = balanceAngle + (controllerSpeed / 10);
+    filteredSpeed = (filteredSpeed * 0.99) + (controllerSpeed * 0.01);
+    filteredSteer = (filteredSteer * 0.9) + (controllerSteer * 0.1);
+    float targetAngle = balanceAngle + (filteredSpeed / 10);
     int16_t ax, ay, az, gx, gy, gz;
     unsigned long loopTime = (currentMicros - gyroStamp) / 1000;
     getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
@@ -129,13 +140,21 @@ void microsloop() {
     int gyroRate = map(gx - 1370, -32768, 32768, -250, 250);
     float gyroAngle = (float)gyroRate * loopTime / 1000;
     float currentAngle = filterCoeff * (previousAngle + gyroAngle) + ( (1 - filterCoeff) * accAngle);
+
+
     float error = currentAngle - targetAngle;
     errorSum = errorSum + error;
     errorSum = constrain(errorSum, -maxError, maxError);
-    float motorPower = (Kp * (error)) + (Ki * (errorSum) * loopTime) - ( Kd * (currentAngle - previousAngle) / loopTime);
 
-    setInterval(motorPower + controllerSteer, LEFTSTEPPER);
-    setInterval(motorPower - controllerSteer, RIGHTSTEPPER);
+    float motorPower = (Kp * (error)) + (Ki * (errorSum) * loopTime) - ( Kd * (currentAngle - previousAngle) / loopTime);
+    if ((currentAngle > 90) or (currentAngle < -90)) {
+      setInterval(0, LEFTSTEPPER);
+      setInterval(0, RIGHTSTEPPER);
+    }
+    else {
+      setInterval(motorPower + filteredSteer, LEFTSTEPPER);
+      setInterval(motorPower - filteredSteer, RIGHTSTEPPER);
+    }
     previousAngle = currentAngle;
     gyroStamp = currentMicros;
     if (PRINT_GYRO) {
@@ -184,9 +203,9 @@ void microsloop() {
 void setup_wifi() {
   delay(10);
   Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(NETWORK);
-  WiFi.begin(NETWORK, PASS);
+  Serial.print("Connecting to network");
+  WiFi.begin("AvansWlan");
+  //WiFi.begin(NETWORK, PASS);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
@@ -205,16 +224,21 @@ void callback(char* topic, byte * payload, unsigned int length) { //takes about 
     val[i] = (char)payload[i];
   }
   val[length + 1] = '\0';
-  if (!strcmp(topic, "bibberBot/speed")) controllerSpeed = atoi(val);
-  else if (!strcmp(topic, "bibberBot/steer")) controllerSteer = atoi(val);
+  boolean messageAccepted = true;
+  if (!strcmp(topic, "bibberBot/speed")) {controllerSpeed = atof(val);}
+  else if (!strcmp(topic, "bibberBot/steer")) {controllerSteer = atof(val);}
+  /*
   else if (!strcmp(topic, "bibberBot/kp")) Kp = atof(val);
   else if (!strcmp(topic, "bibberBot/ki")) Ki = atof(val);
   else if (!strcmp(topic, "bibberBot/kd")) Kd = atof(val);
   else if (!strcmp(topic, "bibberBot/balance")) balanceAngle = atof(val);
   else if (!strcmp(topic, "bibberBot/deadzone")) speedDeadzone = atof(val);
   else if (!strcmp(topic, "bibberBot/quadraticness")) quadraticness = atof(val);
-  else if (!strcmp(topic, "bibberBot/maxerror")) quadraticness = atoi(val);
-
+  else if (!strcmp(topic, "bibberBot/maxerror")) maxError = atoi(val);
+  else messageAccepted = false;
+  if (messageAccepted) dataledStatus = !dataledStatus; //double reverse to keep the same
+  digitalWrite(DATALED, dataledStatus);
+  */
 }
 
 
